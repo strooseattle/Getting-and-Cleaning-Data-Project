@@ -1,54 +1,50 @@
-## load libraries
-library(dplyr)
+library(reshape2)
 
-## download data
-rawDataDir <- "./rawData"
-rawDataUrl <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
-rawDataFilename <- "rawData.zip"
-rawDataDFn <- paste(rawDataDir, "/", "rawData.zip", sep = "")
-dataDir <- "./data"
-
-if (!file.exists(rawDataDir)) {
-    dir.create(rawDataDir)
-    download.file(url = rawDataUrl, destfile = rawDataDFn)
+## Download and unzip dataset
+project_data <- "project_data.zip"
+if (!file.exists(project_data)){
+  fileURL <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip "
+  download.file(fileURL, project_data, method="curl")
 }
-if (!file.exists(dataDir)) {
-    dir.create(dataDir)
-    unzip(zipfile = rawDataDFn, exdir = dataDir)
+if (!file.exists("UCI HAR Dataset")) {
+  unzip(project_data)
 }
 
-## merge {train, test} data set
-xtrain <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/train/X_train.txt"))
-ytrain <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/train/Y_train.txt"))
-strain <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/train/subject_train.txt"))
-xtest <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/test/X_test.txt"))
-ytest <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/test/Y_test.txt"))
-stest <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/test/subject_test.txt"))
-xdata <- rbind(xtrain, xtest)
-ydata <- rbind(ytrain, ytest)
-s_ata <- rbind(strain, stest)
+## Load activity and features data
+act_labs <- read.table("UCI HAR Dataset/activity_labels.txt")
+act_labs$V2 <- as.character(act_labs$V2)
+feats <- read.table("UCI HAR Dataset/features.txt")
+feats$V2 <- as.character(feats$V2)
 
-## load feature and activity info
-feature <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/features.txt"))
-alabel <- read.table(paste(sep = "", dataDir, "/UCI HAR Dataset/activity_labels.txt"))
-alabel[,2] <- as.character(alabel[,2])
+## Extract only the measurements on the mean and standard deviation for each measurement.
+req_feats <- grep(".*mean.*|.*std.*", feats[,2])
+req_feats.names <- feats[req_feats,2]
+req_feats.names = gsub('-mean', 'Mean', req_feats.names)
+req_feats.names = gsub('-std', 'Std', req_feats.names)
+req_feats.names <- gsub('[-()]', '', req_feats.names)
 
-## extract feature columns & names named 'mean, std'
-selectedCols <- grep("-(mean|std).*", as.character(feature[,2]))
-selectedColNames <- feature[selectedCols, 2]
-selectedColNames <- gsub("-mean", "Mean", selectedColNames)
-selectedColNames <- gsub("-std", "Std", selectedColNames)
-selectedColNames <- gsub("[-()]", "", selectedColNames)
+## Load remaining datasets
+x_train <- read.table("UCI HAR Dataset/train/X_train.txt")[req_feats]
+y_train <- read.table("UCI HAR Dataset/train/Y_train.txt")
+subject_train <- read.table("UCI HAR Dataset/train/subject_train.txt")
+x_test <- read.table("UCI HAR Dataset/test/X_test.txt")[req_feats]
+y_test <- read.table("UCI HAR Dataset/test/Y_test.txt")
+subject_test <- read.table("UCI HAR Dataset/test/subject_test.txt")
 
-## extract data 
-xdata <- xdata[selectedCols]
-allData <- cbind(sdata, ydata, xdata)
-colnames(allData) <- c("Subject", "Activity", selectedColNames)
+## Merge the training and the test sets to create one data set.
+trainData <- cbind(x_train, y_train, subject_train)
+testData <- cbind(x_test, y_test, subject_test)
+combinedData <- rbind(trainData, testData)
 
-allData$Activity <- factor(allData$Activity, levels = alabel[,1], labels = alabel[,2])
-allData$Subject <- as.factor(allData$Subject)
+## Label the data
+colnames(combinedData) <- c("subject", "activity", req_feats.names)
 
-## create tidy data set
-meltedData <- melt(allData, id = c("Subject", "Activity"))
-tidyData <- dcast(meltedData, Subject + Activity ~ variable, mean)
-write.table(tidyData, "./tidy_dataset.txt", row.names = FALSE, quote = FALSE)
+## Store activities and subjects into vectors
+combinedData$activity <- factor(combinedData$activity, levels = act_labs$V1, labels = act_labs$V2)
+combinedData$subject <- as.factor(combinedData$subject)
+
+combinedData_melted <- melt(combinedData, id = c("subject", "activity"))
+combinedData_mean <- dcast(combinedData_melted, subject + activity ~ variable, mean)
+
+## Create tidy dataset as text file
+write.table(combinedData_mean, "tidy_data_set.txt", row.names = FALSE, quote = FALSE, sep = " ")
